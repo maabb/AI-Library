@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/AiLibrary.Api/AiLibrary.Api.csproj" />
+    <Project Path="src/AiLibrary.Application/AiLibrary.Application.csproj" />
+    <Project Path="src/AiLibrary.Domain/AiLibrary.Domain.csproj" />
+    <Project Path="src/AiLibrary.Infrastructure/AiLibrary.Infrastructure.csproj" />
+  </Folder>
+</Solution>
