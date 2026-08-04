@@ -1,0 +1,9 @@
+﻿@AiLibrary.Api_HostAddress = http://localhost:5243
+
+### Chat with AI
+POST {{AiLibrary.Api_HostAddress}}/api/chat
+Content-Type: application/json
+
+{
+    "message": "Who is the author of the Al-Chemist novel"
+}
