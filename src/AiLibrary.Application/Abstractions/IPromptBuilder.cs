@@ -1,8 +1,8 @@
-﻿using AiLibrary.Application.Models;
+﻿using Microsoft.Extensions.AI;
 
 namespace AiLibrary.Application.Abstractions;
 
 public interface IPromptBuilder
 {
-    IEnumerable <PromptMessage> BuildPrompt (PromptContext context);
+    IEnumerable <ChatMessage> BuildPrompt (ChatMessage context);
 }

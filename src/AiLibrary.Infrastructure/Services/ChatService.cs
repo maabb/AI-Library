@@ -1,5 +1,4 @@
 ﻿using AiLibrary.Application.Abstractions;
-using AiLibrary.Application.Models;
 using Microsoft.Extensions.AI;
 using ChatResponse = AiLibrary.Application.Dtos.Chat.ChatResponse;
 
@@ -13,18 +12,14 @@ public class ChatService : IChatService
     {
         _chatClient = chatClient;
     }
-    public async Task<ChatResponse> SendMessageAsync(IEnumerable<PromptMessage> prompt, CancellationToken cancellationToken)
+    public async Task<ChatResponse> SendMessageAsync(IEnumerable<ChatMessage> prompt, CancellationToken cancellationToken)
     {
         try
         {
-            var messages = prompt
-                .Select(x => new ChatMessage(
-                   x.Role,
-                    x.Content))
-                .ToList();
+          
             
             var response = await _chatClient.GetResponseAsync(
-                messages,
+                prompt,
                 new ChatOptions { MaxOutputTokens = 400 },
                 cancellationToken: cancellationToken);
 

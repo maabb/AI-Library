@@ -1,18 +1,20 @@
 ﻿using AiLibrary.Application.Abstractions;
-using AiLibrary.Application.Dtos.Chat;
-using AiLibrary.Application.Models;
 using MediatR;
+using Microsoft.Extensions.AI;
+using ChatResponse = AiLibrary.Application.Dtos.Chat.ChatResponse;
 
 namespace AiLibrary.Application.Commands;
 
 public record ChatCommand(string Message) : IRequest<ChatResponse>;
-public class ChatCommandHandler
-: IRequestHandler<ChatCommand, ChatResponse>
+
+public class ChatCommandHandler : IRequestHandler<ChatCommand, ChatResponse>
 {
     private readonly IChatService _aiChatService;
     private readonly IPromptBuilder _promptBuilder;
 
-    public ChatCommandHandler(IChatService aiChatService, IPromptBuilder promptBuilder)
+    public ChatCommandHandler(
+        IChatService aiChatService,
+        IPromptBuilder promptBuilder)
     {
         _aiChatService = aiChatService;
         _promptBuilder = promptBuilder;
@@ -22,12 +24,13 @@ public class ChatCommandHandler
         ChatCommand request,
         CancellationToken cancellationToken)
     {
-        var context = new PromptContext
-        {
-            UserMessage = request.Message
-        };
+
+        var context = new ChatMessage(
+    ChatRole.User,
+    request.Message);
 
         var prompt = _promptBuilder.BuildPrompt(context);
+
         return await _aiChatService.SendMessageAsync(
             prompt,
             cancellationToken);

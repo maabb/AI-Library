@@ -1,11 +1,10 @@
-﻿using AiLibrary.Application.Dtos.Chat;
-using AiLibrary.Application.Models;
+﻿using Microsoft.Extensions.AI;
 
 namespace AiLibrary.Application.Abstractions;
 
 public interface IChatService
 {
-    Task<ChatResponse> SendMessageAsync(
-       IEnumerable<PromptMessage> prompt,
+    Task<Dtos.Chat.ChatResponse> SendMessageAsync(
+       IEnumerable<ChatMessage> prompt,
        CancellationToken cancellationToken);
 }
