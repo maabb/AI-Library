@@ -5,5 +5,6 @@ POST {{AiLibrary.Api_HostAddress}}/api/chat
 Content-Type: application/json
 
 {
+    "sessionId": "test-session",
     "message": "Who is the author of the Al-Chemist novel"
 }

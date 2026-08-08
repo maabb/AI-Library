@@ -1,6 +1,6 @@
-﻿using AiLibrary.Application.Abstractions;
+using System.Runtime.CompilerServices;
+using AiLibrary.Application.Abstractions;
 using Microsoft.Extensions.AI;
-using ChatResponse = AiLibrary.Application.Dtos.Chat.ChatResponse;
 
 namespace AiLibrary.Infrastructure.Services;
 
@@ -12,27 +12,29 @@ public class ChatService : IChatService
     {
         _chatClient = chatClient;
     }
-    public async Task<ChatResponse> SendMessageAsync(IEnumerable<ChatMessage> prompt, CancellationToken cancellationToken)
-    {
-        try
-        {
-          
-            
-            var response = await _chatClient.GetResponseAsync(
-                prompt,
-                new ChatOptions { MaxOutputTokens = 400 },
-                cancellationToken: cancellationToken);
 
-        Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(response));
-            return new ChatResponse
-            {
-                Response = response.Text
-            };
-        }
-        catch (Exception ex)
+    public async Task<string> CompleteAsync(
+        IEnumerable<ChatMessage> messages,
+        CancellationToken cancellationToken)
+    {
+        var response = await _chatClient.GetResponseAsync(
+            messages,
+            new ChatOptions { MaxOutputTokens = 800 },
+            cancellationToken);
+
+        return response.Text ?? string.Empty;
+    }
+
+    public async IAsyncEnumerable<ChatResponseUpdate> StreamAsync(
+        IEnumerable<ChatMessage> messages,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        await foreach (var update in _chatClient.GetStreamingResponseAsync(
+            messages,
+            new ChatOptions { MaxOutputTokens = 800 },
+            cancellationToken))
         {
-            Console.WriteLine(ex.ToString());
-            throw;
+            yield return update;
         }
     }
 }

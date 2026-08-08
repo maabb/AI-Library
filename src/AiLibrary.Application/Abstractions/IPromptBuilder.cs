@@ -4,5 +4,7 @@ namespace AiLibrary.Application.Abstractions;
 
 public interface IPromptBuilder
 {
-    IEnumerable <ChatMessage> BuildPrompt (ChatMessage context);
+    IEnumerable<ChatMessage> BuildPrompt(
+            IEnumerable<ChatMessage> history,
+            ChatMessage userMessage);
 }

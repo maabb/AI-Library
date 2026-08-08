@@ -5,4 +5,7 @@
     <Project Path="src/AiLibrary.Domain/AiLibrary.Domain.csproj" />
     <Project Path="src/AiLibrary.Infrastructure/AiLibrary.Infrastructure.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/AiLibrary.Tests/AiLibrary.Tests.csproj" />
+  </Folder>
 </Solution>

@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>AI-Library Architecture Guide</title>
+  <style>
+    @page { margin: 16mm; size: A4; }
+    body { font-family: "Segoe UI", Calibri, Arial, sans-serif; font-size: 10.5pt; line-height: 1.4; color: #111; max-width: 820px; margin: 0 auto; }
+    h1 { color: #0b3d91; font-size: 20pt; border-bottom: 3px solid #0b3d91; padding-bottom: 6px; }
+    h2 { color: #0b3d91; font-size: 13pt; margin-top: 18px; border-bottom: 1px solid #c5d4e8; padding-bottom: 3px; }
+    h3 { color: #1e3a5f; font-size: 11.5pt; margin-top: 12px; }
+    .meta { color: #555; font-size: 9.5pt; margin-bottom: 14px; }
+    table { width: 100%; border-collapse: collapse; margin: 8px 0 12px; font-size: 9.5pt; }
+    th, td { border: 1px solid #cbd5e1; padding: 5px 7px; vertical-align: top; text-align: left; }
+    th { background: #e8eef7; }
+    code, .path { font-family: Consolas, monospace; font-size: 9pt; background: #f1f5f9; padding: 1px 3px; border-radius: 3px; }
+    pre { background: #0f172a; color: #e2e8f0; padding: 10px; border-radius: 6px; font-size: 8.5pt; overflow-x: auto; }
+    .box { border-left: 4px solid #0b3d91; background: #f8fafc; padding: 8px 10px; margin: 10px 0; }
+    .ok { border-left-color: #15803d; background: #f0fdf4; }
+    ul, ol { margin: 4px 0 8px 18px; }
+    li { margin: 2px 0; }
+    .footer { margin-top: 20px; font-size: 8.5pt; color: #666; border-top: 1px solid #ddd; padding-top: 6px; }
+  </style>
+</head>
+<body>
+
+<h1>AI-Library — Architecture Guide for Backend Developers</h1>
+<p class="meta">
+  <strong>Audience:</strong> Backend developers learning Microsoft.Extensions.AI<br />
+  <strong>Stack:</strong> .NET 10 Web API · Angular 19 · Ollama · MediatR<br />
+  <strong>Learn path:</strong> https://learn.microsoft.com/en-gb/dotnet/ai/quickstarts/build-chat-app?pivots=openai<br />
+  <strong>Date:</strong> August 2026
+</p>
+
+<div class="box">
+  <strong>Purpose of this PDF</strong><br />
+  Explain every major part of the backend and Angular frontend, how they connect,
+  and how each piece maps to the Microsoft Learn “build a chat app” quickstart —
+  adapted into an <em>AI-powered library</em> product instead of a console hiking bot.
+</div>
+
+<h2>1. Big picture</h2>
+<pre>
+  Browser (Angular :4200)
+        |  JSON POST /api/chat
+        |  or SSE  POST /api/chat/stream
+        v
+  AiLibrary.Api  (:5243)
+        |  MediatR ChatCommand / StreamChatCommand
+        v
+  AiLibrary.Application  (use cases + ports)
+        |
+        +-- IChatHistoryStore  -->  in-memory sessions + system prompt
+        +-- IChatService       -->  IChatClient (Ollama via MEAI)
+        v
+  Ollama (:11434)  model e.g. gemma3:4b
+</pre>
+
+<p>The Microsoft sample is a <strong>console loop</strong>. This project keeps the same AI concepts
+but exposes them as an <strong>HTTP API</strong> and a <strong>web UI</strong> so you can learn production-shaped structure.</p>
+
+<h2>2. Backend parts (what each project is for)</h2>
+
+<table>
+  <thead>
+    <tr><th>Project</th><th>Role</th><th>Key types</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>AiLibrary.Api</code></td>
+      <td>Composition root + HTTP edge. No business logic beyond mapping HTTP ↔ commands.</td>
+      <td><code>Program.cs</code>, <code>ChatController</code>, CORS, OpenAPI, <code>Http/*.http</code></td>
+    </tr>
+    <tr>
+      <td><code>AiLibrary.Application</code></td>
+      <td>Use cases (CQRS-style via MediatR). Defines ports (interfaces) the infrastructure implements.</td>
+      <td><code>ChatCommand</code>, <code>StreamChatCommand</code>, <code>ChatRequest/Response</code>, <code>IChat*</code></td>
+    </tr>
+    <tr>
+      <td><code>AiLibrary.Infrastructure</code></td>
+      <td>Real implementations: Ollama client, history store, librarian system prompt.</td>
+      <td><code>ChatService</code>, <code>ChatHistoryStore</code>, <code>PromptBuilder</code>, <code>AddAiServices</code></td>
+    </tr>
+    <tr>
+      <td><code>AiLibrary.Domain</code></td>
+      <td>Reserved for library domain (Book, Author…) later. Empty on purpose until catalog/RAG.</td>
+      <td>—</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>2.1 Program.cs — host</h3>
+<ul>
+  <li>Registers AI services (<code>AddAiServices</code>), MediatR, controllers, CORS for Angular <code>localhost:4200</code>.</li>
+  <li>Maps controllers; enables OpenAPI in Development.</li>
+  <li><strong>Why:</strong> Same job as the top of the Learn sample’s <code>Program.cs</code>, but for ASP.NET Core instead of a console.</li>
+</ul>
+
+<h3>2.2 ChatController — HTTP surface</h3>
+<table>
+  <thead><tr><th>Endpoint</th><th>Behavior</th><th>Angular usage</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><code>POST /api/chat</code></td>
+      <td>Full reply as JSON <code>{ sessionId, message }</code></td>
+      <td>Default / “Stream replies” off — <code>HttpClient.post</code></td>
+    </tr>
+    <tr>
+      <td><code>POST /api/chat/stream</code></td>
+      <td>SSE: <code>session</code> → many <code>token</code> → <code>done</code></td>
+      <td>“Stream replies” on — <code>fetch</code> + ReadableStream</td>
+    </tr>
+  </tbody>
+</table>
+<p>Both paths share the same history store. Streaming is the Learn sample’s
+<code>GetStreamingResponseAsync</code> loop, moved behind HTTP.</p>
+
+<h3>2.3 Application commands</h3>
+<ul>
+  <li><code>ChatCommand</code> → non-streaming: add user msg → <code>CompleteAsync</code> → save assistant msg → return DTO.</li>
+  <li><code>StreamChatCommand</code> → add user msg → yield tokens → save full assistant text when stream ends.</li>
+</ul>
+<p><strong>Why MediatR:</strong> keeps the controller thin and makes it easy to add logging/validation behaviors later without cluttering HTTP code.</p>
+
+<h3>2.4 IChatClient + ChatService</h3>
+<p>Microsoft.Extensions.AI gives you <code>IChatClient</code> so application code does not depend on Ollama or OpenAI types.</p>
+<pre>
+// Infrastructure registration (conceptual)
+services.AddSingleton&lt;IChatClient&gt;(_ =&gt;
+    new OllamaChatClient(new Uri(endpoint), model));
+
+// Learn sample (OpenAI pivot) would instead do:
+// new OpenAIClient(key).GetChatClient(model).AsIChatClient();
+</pre>
+<p><code>ChatService</code> wraps:</p>
+<ul>
+  <li><code>GetResponseAsync</code> → complete message (JSON endpoint)</li>
+  <li><code>GetStreamingResponseAsync</code> → token stream (SSE endpoint)</li>
+</ul>
+
+<h3>2.5 ChatHistoryStore — multi-turn memory</h3>
+<p>Learn sample: one <code>List&lt;ChatMessage&gt;</code> for the whole console process.</p>
+<p>This app: <code>ConcurrentDictionary&lt;sessionId, messages&gt;</code> with per-session locks.</p>
+<ul>
+  <li>New session → insert librarian <strong>system</strong> message once.</li>
+  <li>Each turn → append user, call model with full history, append assistant.</li>
+  <li>Trim old turns if the list grows past a cap (keeps system message).</li>
+</ul>
+<p><strong>Important for backend devs:</strong> history dies when the API process restarts (in-memory). That is intentional for the learning stage before DB/RAG.</p>
+
+<h3>2.6 PromptBuilder — librarian persona</h3>
+<p>Maps 1:1 to the hiking system prompt in the Learn article. Here the persona is <strong>Ava, librarian</strong>:
+ask genre/level/mood, recommend up to three titles, spoiler-safe summaries, remember prior turns.</p>
+
+<h3>2.7 Configuration</h3>
+<pre>
+appsettings.json → Ollama:Endpoint, Ollama:Model
+UserSecretsId on Api project → ready if you switch to OpenAI keys later
+</pre>
+
+<h2>3. Frontend parts (Angular) — what a backend dev should know</h2>
+
+<table>
+  <thead><tr><th>Path</th><th>Role</th></tr></thead>
+  <tbody>
+    <tr><td><code>AI-Library app/src/environments/</code></td><td><code>apiBaseUrl</code> pointing at the API (default <code>http://localhost:5243</code>)</td></tr>
+    <tr><td><code>core/models/chat.models.ts</code></td><td>Mirrors backend DTOs (<code>sessionId</code>, <code>message</code>)</td></tr>
+    <tr><td><code>core/services/chat.service.ts</code></td><td>HTTP client for JSON + fetch-based SSE parser</td></tr>
+    <tr><td><code>features/chat/chat.component.*</code></td><td>UI: messages, session id, stream toggle, new chat</td></tr>
+    <tr><td><code>app.config.ts</code></td><td><code>provideHttpClient()</code> + router</td></tr>
+  </tbody>
+</table>
+
+<h3>3.1 How the UI keeps multi-turn state</h3>
+<ol>
+  <li>First send: no <code>sessionId</code> → API creates one → UI stores it.</li>
+  <li>Later sends: UI posts the same <code>sessionId</code>.</li>
+  <li><strong>New chat</strong> clears local <code>sessionId</code> only; server still has old sessions in memory until restart (harmless).</li>
+</ol>
+<p>The <strong>source of truth for history is the backend store</strong>, not Angular. The UI only displays bubbles and holds the id.</p>
+
+<h3>3.2 Why fetch for streaming?</h3>
+<p>Browser <code>EventSource</code> is GET-only. Our stream endpoint is POST (body carries the message), so Angular uses <code>fetch</code> + reads SSE lines (<code>event:</code> / <code>data:</code>).</p>
+
+<h3>3.3 CORS</h3>
+<p>Angular origin <code>http://localhost:4200</code> ≠ API origin <code>http://localhost:5243</code>.
+<code>Program.cs</code> allows that origin so browsers accept API responses. Backend tools (.http, curl) ignore CORS.</p>
+
+<h2>4. Request/response contracts</h2>
+<pre>
+// Request
+{ "sessionId": "optional-string", "message": "required string" }
+
+// JSON response
+{ "sessionId": "…", "message": "assistant full text" }
+
+// SSE events
+event: session
+data: {"sessionId":"…"}
+
+event: token
+data: {"text":"partial"}
+
+event: done
+data: {"sessionId":"…"}
+</pre>
+
+<h2>5. Microsoft Learn quickstart — side-by-side match</h2>
+<table>
+  <thead>
+    <tr><th>Learn quickstart</th><th>AI-Library equivalent</th><th>Notes</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Console project</td>
+      <td>Web API + Angular</td>
+      <td>Same AI ideas; better product shape</td>
+    </tr>
+    <tr>
+      <td>Packages: OpenAI + MEAI.OpenAI</td>
+      <td>MEAI + MEAI.Ollama</td>
+      <td>Abstraction is the lesson; provider is swappable</td>
+    </tr>
+    <tr>
+      <td>User secrets OpenAIKey / ModelName</td>
+      <td>appsettings Ollama endpoint/model</td>
+      <td>UserSecretsId already on Api for later OpenAI</td>
+    </tr>
+    <tr>
+      <td><code>IChatClient</code> from OpenAIClient</td>
+      <td><code>OllamaChatClient</code> as <code>IChatClient</code></td>
+      <td>Handler/service code stays provider-agnostic</td>
+    </tr>
+    <tr>
+      <td>Hiking system prompt</td>
+      <td>Librarian system prompt (<code>PromptBuilder</code>)</td>
+      <td>Same technique, different domain</td>
+    </tr>
+    <tr>
+      <td><code>List&lt;ChatMessage&gt; chatHistory</code></td>
+      <td><code>ChatHistoryStore</code> by sessionId</td>
+      <td>Multi-user / multi-tab capable (in-memory)</td>
+    </tr>
+    <tr>
+      <td><code>while(true) ReadLine</code></td>
+      <td>Angular send loop + <code>.http</code> multi-turn scenarios</td>
+      <td>Interactive + automated-friendly</td>
+    </tr>
+    <tr>
+      <td><code>GetStreamingResponseAsync</code> to console</td>
+      <td>SSE tokens to browser</td>
+      <td>Same stream API, different transport</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="box ok">
+  <strong>Learning takeaway:</strong> If you can point to system prompt, history list, IChatClient, and streaming in both the Learn article and this repo, you have completed the quickstart’s core skills — and already layered them for a real library assistant.
+</div>
+
+<h2>6. End-to-end flows</h2>
+<h3>6.1 JSON multi-turn (recommended first)</h3>
+<ol>
+  <li>UI/http → <code>POST /api/chat</code> with message only.</li>
+  <li>Handler creates sessionId, history gets system+user.</li>
+  <li>Ollama completes; assistant saved; JSON returned.</li>
+  <li>Client resends sessionId with “similar books” / “summary”.</li>
+  <li>Model sees full prior transcript → coherent multi-turn.</li>
+</ol>
+
+<h3>6.2 Streaming</h3>
+<ol>
+  <li>Same history append for user message.</li>
+  <li>Tokens flushed as SSE <code>token</code> events.</li>
+  <li>On completion, full text stored as assistant message (so the next turn still works).</li>
+</ol>
+
+<h2>7. How to test (backend-first)</h2>
+<ul>
+  <li>File: <code>src/AiLibrary.Api/Http/chat.http</code> — scenarios A–I with comments.</li>
+  <li>Manual multi-turn script: Hobbit → similar books → summary of first recommendation.</li>
+  <li>Angular: run both processes; watch session id under the header; toggle stream.</li>
+</ul>
+
+<h2>8. What we deliberately postponed</h2>
+<ul>
+  <li>SQL/catalog database for books</li>
+  <li>RAG / embeddings</li>
+  <li>Auth, rate limits, durable session store</li>
+</ul>
+<p>Order recommended by the product path: solid chat + history → catalog/tools → RAG.</p>
+
+<h2>9. File map (quick navigation)</h2>
+<pre>
+Backend
+  Program.cs                         host, CORS, DI
+  Controllers/ChatController.cs      HTTP endpoints
+  Commands/ChatCommandHandler.cs     non-stream use case
+  Commands/StreamChatCommandHandler  stream use case
+  Services/ChatService.cs            IChatClient wrapper
+  Services/ChatHistoryStore.cs       session memory
+  Services/PromptBuilder.cs          librarian system prompt
+  Http/chat.http                     executable API tests
+
+Frontend
+  core/services/chat.service.ts      API client
+  features/chat/chat.component.*     UI
+  environments/environment*.ts       apiBaseUrl
+</pre>
+
+<h2>10. Setup cheat sheet</h2>
+<pre>
+ollama pull gemma3:4b
+dotnet run --project src/AiLibrary.Api --launch-profile http
+cd "AI-Library app" &amp;&amp; npm start
+# API http://localhost:5243   UI http://localhost:4200
+</pre>
+
+<p class="footer">
+  AI-Library learning record · Compare with Microsoft Learn quickstart “Build an AI chat app with .NET” ·
+  Provider today: Ollama · Abstraction: Microsoft.Extensions.AI
+</p>
+
+</body>
+</html>

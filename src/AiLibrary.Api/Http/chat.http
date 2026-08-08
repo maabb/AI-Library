@@ -1,0 +1,142 @@
+###############################################################################
+# AI-Library API — Chat HTTP tests
+# Tool: Visual Studio / VS Code REST Client / Rider HTTP Client
+#
+# Prerequisites:
+#   1. Ollama running locally with model pulled (default: gemma3:4b)
+#   2. API started:  dotnet run --project src/AiLibrary.Api --launch-profile http
+#   3. Base URL below matches launchSettings (http profile = port 5243)
+#
+# How multi-turn works:
+#   - First request may omit sessionId (server creates one).
+#   - Copy sessionId from the response into later requests so history is reused.
+#   - History is in-memory on the API process (lost on restart).
+###############################################################################
+
+@baseUrl = http://localhost:5243
+@contentType = application/json
+
+### ============================================================================
+### Scenario A — Health / OpenAPI smoke test
+### Why: Confirm the API process is up before spending time on model calls.
+### Expected: 200 + OpenAPI JSON document.
+### ============================================================================
+GET {{baseUrl}}/openapi/v1.json
+Accept: application/json
+
+### ============================================================================
+### Scenario B — Start a new conversation (no sessionId)
+### Why: First turn; server should allocate a sessionId and seed the librarian
+###       system prompt into history. Ava should introduce / answer as librarian.
+### Expected: 200 JSON { "sessionId": "...", "message": "..." }
+### Action: Copy sessionId from response into @sessionId below for multi-turn.
+### ============================================================================
+# @name startChat
+POST {{baseUrl}}/api/chat
+Content-Type: {{contentType}}
+
+{
+  "message": "Hello! Tell me briefly about the book The Hobbit by J.R.R. Tolkien without major spoilers."
+}
+
+###
+# After running Scenario B, set this from the response body (REST Client:
+# @sessionId = {{startChat.response.body.sessionId}} )
+@sessionId = {{startChat.response.body.$.sessionId}}
+
+### ============================================================================
+### Scenario C — Multi-turn #2: ask for similar books (SAME session)
+### Why: Proves conversation history works. The model should remember The Hobbit
+###       from Scenario B without repeating the full title context.
+### Expected: 200, same sessionId, recommendations related to The Hobbit.
+### ============================================================================
+POST {{baseUrl}}/api/chat
+Content-Type: {{contentType}}
+
+{
+  "sessionId": "{{sessionId}}",
+  "message": "What are three similar books I might enjoy if I liked that one?"
+}
+
+### ============================================================================
+### Scenario D — Multi-turn #3: ask for a summary of a prior recommendation
+### Why: Harder memory check — refers to "the first similar book you recommended"
+###       which only exists in session history, not in this request body.
+### Expected: 200, same sessionId, summary of one of the three titles from C.
+### ============================================================================
+POST {{baseUrl}}/api/chat
+Content-Type: {{contentType}}
+
+{
+  "sessionId": "{{sessionId}}",
+  "message": "Give me a short spoiler-free summary of the first similar book you recommended."
+}
+
+### ============================================================================
+### Scenario E — New session isolation
+### Why: Omitting sessionId must NOT reuse Scenario B–D history.
+### Expected: New sessionId; assistant should NOT assume you already discussed Hobbit
+###           (may still know the book generally, but not "that one" from prior chat).
+### ============================================================================
+POST {{baseUrl}}/api/chat
+Content-Type: {{contentType}}
+
+{
+  "message": "What book were we just talking about?"
+}
+
+### ============================================================================
+### Scenario F — Validation: empty message
+### Why: API should reject empty input instead of calling the model.
+### Expected: 400 Bad Request (model binding / [Required] validation).
+### ============================================================================
+POST {{baseUrl}}/api/chat
+Content-Type: {{contentType}}
+
+{
+  "message": ""
+}
+
+### ============================================================================
+### Scenario G — Streaming (SSE) first turn
+### Why: Angular "Stream replies" toggle uses POST /api/chat/stream.
+###       Events: session → token* → done
+### Expected: Content-Type text/event-stream; event lines in body.
+### Note: Some HTTP clients buffer SSE; prefer browser Network tab or curl -N.
+### ============================================================================
+# @name streamStart
+POST {{baseUrl}}/api/chat/stream
+Content-Type: {{contentType}}
+Accept: text/event-stream
+
+{
+  "message": "Name one classic mystery novel in one short sentence."
+}
+
+###
+@streamSessionId = {{streamStart.response.body.$.sessionId}}
+
+### ============================================================================
+### Scenario H — Streaming multi-turn (same session as G if client captured id)
+### Why: Streaming path must share the same IChatHistoryStore as JSON chat.
+### Expected: Tokens stream; history includes previous stream turn.
+### Manual: paste sessionId from the "session" SSE event of Scenario G.
+### ============================================================================
+POST {{baseUrl}}/api/chat/stream
+Content-Type: {{contentType}}
+Accept: text/event-stream
+
+{
+  "sessionId": "PASTE_STREAM_SESSION_ID_HERE",
+  "message": "Recommend one similar book to that mystery novel."
+}
+
+### ============================================================================
+### Scenario I — CORS preflight (Angular dev origin)
+### Why: Browser from http://localhost:4200 sends OPTIONS before POST.
+### Expected: 204/200 with Access-Control-Allow-Origin including localhost:4200.
+### ============================================================================
+OPTIONS {{baseUrl}}/api/chat
+Origin: http://localhost:4200
+Access-Control-Request-Method: POST
+Access-Control-Request-Headers: content-type
