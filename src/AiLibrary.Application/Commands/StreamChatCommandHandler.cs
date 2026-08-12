@@ -24,7 +24,7 @@ public class StreamChatCommandHandler : IRequestHandler<StreamChatCommand, Strea
         _toolCallSink = toolCallSink;
     }
 
-    public Task<StreamChatResult> Handle(StreamChatCommand request, CancellationToken cancellationToken)
+    public async Task<StreamChatResult> Handle(StreamChatCommand request, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(request.Message))
         {
@@ -35,9 +35,13 @@ public class StreamChatCommandHandler : IRequestHandler<StreamChatCommand, Strea
             ? Guid.NewGuid().ToString("N")
             : request.SessionId.Trim();
 
-        var prompt = _historyStore.AddUserMessage(sessionId, request.Message.Trim());
+        // Same as JSON path: durable user turn + prompt snapshot for streaming.
+        var prompt = await _historyStore.AddUserMessageAsync(
+            sessionId,
+            request.Message.Trim(),
+            cancellationToken);
 
-        // Tokens close over `result` so we can write ToolsUsed when enumeration finishes.
+        // Tokens close over `result` so ToolsUsed can be set when the stream ends.
         StreamChatResult? result = null;
         result = new StreamChatResult
         {
@@ -45,7 +49,7 @@ public class StreamChatCommandHandler : IRequestHandler<StreamChatCommand, Strea
             Tokens = StreamAndPersistAsync(() => result!, sessionId, prompt, cancellationToken)
         };
 
-        return Task.FromResult(result);
+        return result;
     }
 
     private async IAsyncEnumerable<string> StreamAndPersistAsync(
@@ -62,8 +66,8 @@ public class StreamChatCommandHandler : IRequestHandler<StreamChatCommand, Strea
             yield return token;
         }
 
-        // Persist full reply + expose tool audit for SSE done event / chips.
-        _historyStore.AddAssistantMessage(sessionId, full.ToString());
+        // After all tokens: save full reply + attach tool chips for SSE done event.
+        await _historyStore.AddAssistantMessageAsync(sessionId, full.ToString(), cancellationToken);
         resultAccessor().ToolsUsed = ToolCallMapping.FromSink(_toolCallSink);
     }
 }

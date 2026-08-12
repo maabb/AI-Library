@@ -1,16 +1,19 @@
 using System.Collections.Concurrent;
 using AiLibrary.Application.Abstractions;
+using AiLibrary.Application.Dtos.Chat;
 using Microsoft.Extensions.AI;
 
 namespace AiLibrary.Infrastructure.Services;
 
 /// <summary>
-/// Thread-safe in-memory multi-turn conversation store.
-/// Each session starts with the librarian system prompt.
+/// In-memory multi-turn store for unit tests. Production uses <see cref="EfChatHistoryStore"/>.
 /// </summary>
 public class ChatHistoryStore : IChatHistoryStore
 {
-    private const int MaxMessagesPerSession = 40;
+    // Shared caps with EfChatHistoryStore (model context + local disk bounds).
+    public const int MaxMessagesPerSession = 40;
+    public const int MaxSessionsRetained = 100;
+    public const int MaxListTake = 100;
 
     private readonly IPromptBuilder _promptBuilder;
     private readonly ConcurrentDictionary<string, SessionState> _sessions = new();
@@ -20,7 +23,10 @@ public class ChatHistoryStore : IChatHistoryStore
         _promptBuilder = promptBuilder;
     }
 
-    public IReadOnlyList<ChatMessage> AddUserMessage(string sessionId, string userMessage)
+    public Task<IReadOnlyList<ChatMessage>> AddUserMessageAsync(
+        string sessionId,
+        string userMessage,
+        CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
         ArgumentException.ThrowIfNullOrWhiteSpace(userMessage);
@@ -28,53 +34,111 @@ public class ChatHistoryStore : IChatHistoryStore
         var session = GetOrCreateSession(sessionId);
         lock (session.Gate)
         {
+            session.UpdatedAt = DateTimeOffset.UtcNow;
             session.Messages.Add(new ChatMessage(ChatRole.User, userMessage));
             TrimIfNeeded(session.Messages);
-            return session.Messages.ToList();
+            PruneOldSessions_NoLock();
+            return Task.FromResult<IReadOnlyList<ChatMessage>>(session.Messages.ToList());
         }
     }
 
-    public void AddAssistantMessage(string sessionId, string assistantMessage)
+    public Task AddAssistantMessageAsync(
+        string sessionId,
+        string assistantMessage,
+        CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
 
         var session = GetOrCreateSession(sessionId);
         lock (session.Gate)
         {
+            session.UpdatedAt = DateTimeOffset.UtcNow;
             session.Messages.Add(new ChatMessage(ChatRole.Assistant, assistantMessage ?? string.Empty));
             TrimIfNeeded(session.Messages);
         }
+
+        return Task.CompletedTask;
     }
 
-    public IReadOnlyList<ChatMessage> GetHistory(string sessionId)
+    public Task<IReadOnlyList<ChatMessage>> GetHistoryAsync(
+        string sessionId,
+        CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
 
         if (!_sessions.TryGetValue(sessionId, out var session))
         {
-            return Array.Empty<ChatMessage>();
+            return Task.FromResult<IReadOnlyList<ChatMessage>>(Array.Empty<ChatMessage>());
         }
 
         lock (session.Gate)
         {
-            return session.Messages.ToList();
+            return Task.FromResult<IReadOnlyList<ChatMessage>>(session.Messages.ToList());
         }
     }
 
-    public bool Exists(string sessionId) =>
-        !string.IsNullOrWhiteSpace(sessionId) && _sessions.ContainsKey(sessionId);
+    public Task<IReadOnlyList<ChatSessionInfo>> ListSessionsAsync(
+        int take = 30,
+        CancellationToken cancellationToken = default)
+    {
+        take = Math.Clamp(take, 1, MaxListTake);
+
+        var list = _sessions
+            .Select(kv =>
+            {
+                lock (kv.Value.Gate)
+                {
+                    var preview = kv.Value.Messages
+                        .LastOrDefault(m => m.Role == ChatRole.User || m.Role == ChatRole.Assistant)
+                        ?.Text;
+                    if (preview is { Length: > 120 })
+                    {
+                        preview = preview[..117] + "...";
+                    }
+
+                    return new ChatSessionInfo
+                    {
+                        Id = kv.Key,
+                        UpdatedAt = kv.Value.UpdatedAt,
+                        Preview = preview
+                    };
+                }
+            })
+            .OrderByDescending(s => s.UpdatedAt)
+            .Take(take)
+            .ToList();
+
+        return Task.FromResult<IReadOnlyList<ChatSessionInfo>>(list);
+    }
 
     private SessionState GetOrCreateSession(string sessionId)
     {
         return _sessions.GetOrAdd(sessionId, _ => new SessionState
         {
+            UpdatedAt = DateTimeOffset.UtcNow,
             Messages = [_promptBuilder.GetSystemMessage()]
         });
     }
 
-    /// <summary>
-    /// Keeps the system message and the newest turns so context stays within model limits.
-    /// </summary>
+    private void PruneOldSessions_NoLock()
+    {
+        if (_sessions.Count <= MaxSessionsRetained)
+        {
+            return;
+        }
+
+        var oldest = _sessions
+            .OrderBy(kv => kv.Value.UpdatedAt)
+            .Take(_sessions.Count - MaxSessionsRetained)
+            .Select(kv => kv.Key)
+            .ToList();
+
+        foreach (var id in oldest)
+        {
+            _sessions.TryRemove(id, out _);
+        }
+    }
+
     private static void TrimIfNeeded(List<ChatMessage> messages)
     {
         if (messages.Count <= MaxMessagesPerSession)
@@ -96,6 +160,7 @@ public class ChatHistoryStore : IChatHistoryStore
     private sealed class SessionState
     {
         public object Gate { get; } = new();
+        public DateTimeOffset UpdatedAt { get; set; }
         public List<ChatMessage> Messages { get; init; } = [];
     }
 }

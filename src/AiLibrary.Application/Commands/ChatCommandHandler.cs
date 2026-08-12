@@ -32,11 +32,16 @@ public class ChatCommandHandler : IRequestHandler<ChatCommand, ChatResponse>
             ? Guid.NewGuid().ToString("N")
             : request.SessionId.Trim();
 
-        var prompt = _historyStore.AddUserMessage(sessionId, request.Message.Trim());
-        var reply = await _chatService.CompleteAsync(prompt, cancellationToken);
-        _historyStore.AddAssistantMessage(sessionId, reply);
+        // Persist user turn (and create session on first message); returns full history for the model.
+        var prompt = await _historyStore.AddUserMessageAsync(
+            sessionId,
+            request.Message.Trim(),
+            cancellationToken);
 
-        // Sink was filled during CompleteAsync if the model called catalog tools.
+        var reply = await _chatService.CompleteAsync(prompt, cancellationToken);
+        // Persist assistant turn so the next request (or restart) still has context.
+        await _historyStore.AddAssistantMessageAsync(sessionId, reply, cancellationToken);
+
         return new ChatResponse
         {
             SessionId = sessionId,

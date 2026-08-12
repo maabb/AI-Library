@@ -8,9 +8,9 @@ public class ChatHistoryStoreTests
     private readonly ChatHistoryStore _store = new(new PromptBuilder());
 
     [Fact]
-    public void AddUserMessage_SeedsSystemPromptOnce()
+    public async Task AddUserMessage_SeedsSystemPromptOnce()
     {
-        var snapshot = _store.AddUserMessage("s1", "Hello");
+        var snapshot = await _store.AddUserMessageAsync("s1", "Hello");
 
         Assert.Equal(ChatRole.System, snapshot[0].Role);
         Assert.Equal(ChatRole.User, snapshot[^1].Role);
@@ -18,28 +18,40 @@ public class ChatHistoryStoreTests
     }
 
     [Fact]
-    public void AddAssistantMessage_AppendsToSameSession()
+    public async Task AddAssistantMessage_AppendsToSameSession()
     {
-        _store.AddUserMessage("s1", "Q1");
-        _store.AddAssistantMessage("s1", "A1");
+        await _store.AddUserMessageAsync("s1", "Q1");
+        await _store.AddAssistantMessageAsync("s1", "A1");
 
-        var history = _store.GetHistory("s1");
+        var history = await _store.GetHistoryAsync("s1");
         Assert.Equal(3, history.Count);
         Assert.Equal("A1", history[^1].Text);
     }
 
     [Fact]
-    public void DifferentSessions_AreIsolated()
+    public async Task DifferentSessions_AreIsolated()
     {
-        _store.AddUserMessage("a", "from A");
-        _store.AddUserMessage("b", "from B");
+        await _store.AddUserMessageAsync("a", "from A");
+        await _store.AddUserMessageAsync("b", "from B");
 
-        var a = _store.GetHistory("a");
-        var b = _store.GetHistory("b");
+        var a = await _store.GetHistoryAsync("a");
+        var b = await _store.GetHistoryAsync("b");
 
         Assert.Contains(a, m => m.Text == "from A");
         Assert.DoesNotContain(a, m => m.Text == "from B");
         Assert.Contains(b, m => m.Text == "from B");
         Assert.DoesNotContain(b, m => m.Text == "from A");
+    }
+
+    [Fact]
+    public async Task ListSessions_ReturnsNewestFirst()
+    {
+        await _store.AddUserMessageAsync("old", "first");
+        await Task.Delay(5);
+        await _store.AddUserMessageAsync("new", "second");
+
+        var list = await _store.ListSessionsAsync(10);
+        Assert.True(list.Count >= 2);
+        Assert.Equal("new", list[0].Id);
     }
 }

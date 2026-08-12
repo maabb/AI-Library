@@ -2,6 +2,7 @@ using AiLibrary.Application.Abstractions;
 using AiLibrary.Application.Queries.Books;
 using AiLibrary.Infrastructure.Data;
 using AiLibrary.Infrastructure.Data.Repositories;
+using AiLibrary.Infrastructure.Services;
 using AiLibrary.Infrastructure.Tools;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -17,15 +18,23 @@ public sealed class TestSqlFixture : IDisposable
 
     public TestSqlFixture()
     {
+        // Keep connection open so all scopes share the same in-memory database.
         _connection = new SqliteConnection("Data Source=:memory:");
         _connection.Open();
 
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddDbContextFactory<SqlContext>(options => options.UseSqlite(_connection));
+
+        void ConfigureSqlite(DbContextOptionsBuilder options) =>
+            options.UseSqlite(_connection);
+
+        services.AddDbContext<SqlContext>(ConfigureSqlite);
+        services.AddDbContextFactory<SqlContext>(ConfigureSqlite);
         services.AddScoped(typeof(ISqlRepository<>), typeof(SqlRepository<>));
         services.AddScoped<IToolCallSink, ToolCallSink>();
         services.AddScoped<CatalogTools>();
+        services.AddSingleton<IPromptBuilder, PromptBuilder>();
+        services.AddScoped<IChatHistoryStore, EfChatHistoryStore>();
         services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(GetBooksQuery).Assembly));
 
         Services = services.BuildServiceProvider();

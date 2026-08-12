@@ -1,20 +1,30 @@
+using AiLibrary.Application.Dtos.Chat;
 using Microsoft.Extensions.AI;
 
 namespace AiLibrary.Application.Abstractions;
 
+// Port for multi-turn memory. Prod = EF/SQLite; tests = in-memory.
+// Does not create the database file — that is MigrateAsync on startup.
 public interface IChatHistoryStore
 {
-    /// <summary>
-    /// Adds the user message, returns a snapshot of the full conversation
-    /// (system + prior turns + this user message) for the model call.
-    /// </summary>
-    IReadOnlyList<ChatMessage> AddUserMessage(string sessionId, string userMessage);
+    // Creates session + system seed on first use, then appends user turn; returns full prompt for the model.
+    Task<IReadOnlyList<ChatMessage>> AddUserMessageAsync(
+        string sessionId,
+        string userMessage,
+        CancellationToken cancellationToken = default);
 
-    /// <summary>Appends the assistant reply after a successful model call.</summary>
-    void AddAssistantMessage(string sessionId, string assistantMessage);
+    Task AddAssistantMessageAsync(
+        string sessionId,
+        string assistantMessage,
+        CancellationToken cancellationToken = default);
 
-    /// <summary>Returns a copy of the current history for inspection/tests.</summary>
-    IReadOnlyList<ChatMessage> GetHistory(string sessionId);
+    // Empty list if session never existed (read-only — does not create a session).
+    Task<IReadOnlyList<ChatMessage>> GetHistoryAsync(
+        string sessionId,
+        CancellationToken cancellationToken = default);
 
-    bool Exists(string sessionId);
+    // Sidebar list; take is clamped by the implementation.
+    Task<IReadOnlyList<ChatSessionInfo>> ListSessionsAsync(
+        int take = 30,
+        CancellationToken cancellationToken = default);
 }

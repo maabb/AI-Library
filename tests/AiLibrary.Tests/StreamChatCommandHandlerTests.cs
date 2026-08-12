@@ -27,7 +27,7 @@ public class StreamChatCommandHandlerTests
         }
 
         Assert.Equal("ABC", sb.ToString());
-        var stored = history.GetHistory(result.SessionId);
+        var stored = await history.GetHistoryAsync(result.SessionId);
         Assert.Contains(stored, m => m.Role == ChatRole.Assistant && m.Text == "ABC");
     }
 

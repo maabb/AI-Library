@@ -33,19 +33,26 @@ public static class ServiceCollectionExtensions
         var connectionString = configuration.GetConnectionString("Default")
             ?? "Data Source=ailibrary.db";
 
-        services.AddDbContextFactory<SqlContext>(options =>
-            options.UseSqlite(connectionString));
+        // Local SQLite file (see ConnectionStrings:Default). No separate server process.
+        // Scoped DbContext = one context per HTTP request (injected into EfChatHistoryStore).
+        // Factory kept for SqlRepository / startup MigrateAsync.
+        void ConfigureSqlite(DbContextOptionsBuilder options) =>
+            options.UseSqlite(connectionString);
+
+        services.AddDbContext<SqlContext>(ConfigureSqlite);
+        services.AddDbContextFactory<SqlContext>(ConfigureSqlite);
 
         services.AddScoped(typeof(ISqlRepository<>), typeof(SqlRepository<>));
 
-        // Scoped: one HTTP request → one tool audit list + fresh CatalogTools (needs MediatR).
+        // Scoped: one HTTP request → one context, one tool audit, CatalogTools (MediatR).
         services.AddScoped<IToolCallSink, ToolCallSink>();
         services.AddScoped<CatalogTools>();
         services.AddSingleton<IPromptBuilder, PromptBuilder>();
-        services.AddSingleton<IChatHistoryStore, ChatHistoryStore>();
+        // Prod history is SQLite. In-memory ChatHistoryStore is for unit tests only.
+        services.AddScoped<IChatHistoryStore, EfChatHistoryStore>();
         services.AddScoped<IChatService, ChatService>();
 
-        // Without UseFunctionInvocation, Tools on ChatOptions are advertised but never executed.
+        // UseFunctionInvocation = MEAI runs C# tools when the model requests them.
         services.AddSingleton<IChatClient>(_ =>
         {
             IChatClient ollama = new OllamaChatClient(endpointUri, model);
@@ -57,7 +64,7 @@ public static class ServiceCollectionExtensions
         return services;
     }
 
-    // Apply EF migrations + HasData seed on startup.
+    // Creates/opens the DB file and applies migrations (books seed + chat tables). Not ExistsAsync.
     public static async Task InitializeDatabaseAsync(this IServiceProvider services)
     {
         var factory = services.GetRequiredService<IDbContextFactory<SqlContext>>();
