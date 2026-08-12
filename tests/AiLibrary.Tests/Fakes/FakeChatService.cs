@@ -16,14 +16,14 @@ public sealed class FakeChatService : IChatService
         return Task.FromResult(NextReply);
     }
 
-    public async IAsyncEnumerable<ChatResponseUpdate> StreamAsync(
+    public async IAsyncEnumerable<string> StreamAsync(
         IEnumerable<ChatMessage> messages,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
     {
         ReceivedPrompts.Add(messages.ToList());
         foreach (var ch in NextReply)
         {
-            yield return new ChatResponseUpdate(ChatRole.Assistant, ch.ToString());
+            yield return ch.ToString();
             await Task.Yield();
         }
     }

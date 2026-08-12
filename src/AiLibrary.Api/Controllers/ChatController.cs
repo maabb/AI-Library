@@ -1,5 +1,4 @@
-﻿using System.Text;
-using System.Text.Json;
+﻿using AiLibrary.Api.Streaming;
 using AiLibrary.Application.Commands;
 using AiLibrary.Application.Dtos.Chat;
 using MediatR;
@@ -8,12 +7,11 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace AiLibrary.Api.Controllers;
 
+// HTTP edge only — no business logic beyond MediatR + SSE.
 [ApiController]
 [Route("api/[controller]")]
 public class ChatController : ControllerBase
 {
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
-
     private readonly IMediator _mediator;
 
     public ChatController(IMediator mediator)
@@ -21,7 +19,6 @@ public class ChatController : ControllerBase
         _mediator = mediator;
     }
 
-    /// <summary>Non-streaming multi-turn chat. Best default for Angular HttpClient.</summary>
     [HttpPost]
     [ProducesResponseType(typeof(ChatResponse), StatusCodes.Status200OK)]
     public async Task<ActionResult<ChatResponse>> Chat(
@@ -35,12 +32,9 @@ public class ChatController : ControllerBase
         return Ok(result);
     }
 
-    /// <summary>
-    /// Streaming chat (Server-Sent Events) for Angular EventSource/fetch streams.
-    /// Events: session (once), token (many), done (once).
-    /// </summary>
+    // SSE: session → token* → done{toolsUsed}. Framing via ASP.NET TypedResults.ServerSentEvents.
     [HttpPost("stream")]
-    public async Task Stream(
+    public async Task<IResult> Stream(
         [FromBody] ChatRequest request,
         CancellationToken cancellationToken)
     {
@@ -48,27 +42,11 @@ public class ChatController : ControllerBase
             new StreamChatCommand(request.SessionId, request.Message),
             cancellationToken);
 
-        Response.Headers.ContentType = "text/event-stream";
-        Response.Headers.CacheControl = "no-cache";
-        Response.Headers.Connection = "keep-alive";
-        Response.Headers["X-Accel-Buffering"] = "no";
+        // Proxies (nginx etc.) otherwise buffer the whole response before the client sees tokens.
         HttpContext.Features.Get<IHttpResponseBodyFeature>()?.DisableBuffering();
+        Response.Headers["X-Accel-Buffering"] = "no";
 
-        await WriteSseAsync("session", new { sessionId = result.SessionId }, cancellationToken);
-
-        await foreach (var token in result.Tokens.WithCancellation(cancellationToken))
-        {
-            await WriteSseAsync("token", new { text = token }, cancellationToken);
-        }
-
-        await WriteSseAsync("done", new { sessionId = result.SessionId }, cancellationToken);
-    }
-
-    private async Task WriteSseAsync(string eventName, object payload, CancellationToken cancellationToken)
-    {
-        var json = JsonSerializer.Serialize(payload, JsonOptions);
-        var chunk = $"event: {eventName}\ndata: {json}\n\n";
-        await Response.Body.WriteAsync(Encoding.UTF8.GetBytes(chunk), cancellationToken);
-        await Response.Body.FlushAsync(cancellationToken);
+        return TypedResults.ServerSentEvents(
+            ChatSseStream.ToSseItems(result, cancellationToken));
     }
 }

@@ -1,13 +1,14 @@
 using AiLibrary.Application.Abstractions;
+using AiLibrary.Application.Queries.Books;
 using AiLibrary.Infrastructure.Data;
 using AiLibrary.Infrastructure.Data.Repositories;
+using AiLibrary.Infrastructure.Tools;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace AiLibrary.Tests.Support;
 
-/// <summary>Shared in-memory SQLite + generic <see cref="ISqlRepository{TEntity}"/> for unit tests.</summary>
 public sealed class TestSqlFixture : IDisposable
 {
     private readonly SqliteConnection _connection;
@@ -20,8 +21,12 @@ public sealed class TestSqlFixture : IDisposable
         _connection.Open();
 
         var services = new ServiceCollection();
+        services.AddLogging();
         services.AddDbContextFactory<SqlContext>(options => options.UseSqlite(_connection));
         services.AddScoped(typeof(ISqlRepository<>), typeof(SqlRepository<>));
+        services.AddScoped<IToolCallSink, ToolCallSink>();
+        services.AddScoped<CatalogTools>();
+        services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(GetBooksQuery).Assembly));
 
         Services = services.BuildServiceProvider();
 

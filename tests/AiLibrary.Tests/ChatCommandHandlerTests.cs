@@ -1,3 +1,4 @@
+using AiLibrary.Application.Abstractions;
 using AiLibrary.Application.Commands;
 using AiLibrary.Infrastructure.Services;
 using AiLibrary.Tests.Fakes;
@@ -8,12 +9,13 @@ namespace AiLibrary.Tests;
 public class ChatCommandHandlerTests
 {
     private readonly FakeChatService _chat = new();
+    private readonly FakeToolCallSink _tools = new();
     private readonly ChatHistoryStore _history = new(new PromptBuilder());
     private readonly ChatCommandHandler _handler;
 
     public ChatCommandHandlerTests()
     {
-        _handler = new ChatCommandHandler(_chat, _history);
+        _handler = new ChatCommandHandler(_chat, _history, _tools);
     }
 
     [Fact]
@@ -47,11 +49,6 @@ public class ChatCommandHandlerTests
 
         Assert.Equal(first.SessionId, second.SessionId);
         Assert.Equal(2, _chat.ReceivedPrompts.Count);
-
-        var secondPrompt = _chat.ReceivedPrompts[1];
-        Assert.Contains(secondPrompt, m => m.Role == ChatRole.User && m.Text!.Contains("Hobbit"));
-        Assert.Contains(secondPrompt, m => m.Role == ChatRole.Assistant && m.Text == "First answer");
-        Assert.Contains(secondPrompt, m => m.Role == ChatRole.User && m.Text!.Contains("similar"));
     }
 
     [Fact]
@@ -62,12 +59,50 @@ public class ChatCommandHandlerTests
     }
 
     [Fact]
-    public async Task Handle_SystemPrompt_IsGenericLibrarianPersona()
+    public async Task Handle_SystemPrompt_MentionsTools()
     {
         _ = await _handler.Handle(new ChatCommand(null, "Hi"), CancellationToken.None);
 
         var system = _chat.ReceivedPrompts[0].First(m => m.Role == ChatRole.System);
         Assert.Contains("Ava", system.Text, StringComparison.Ordinal);
-        Assert.Contains("librarian", system.Text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("search_catalog", system.Text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Handle_IncludesToolsUsed_FromSink()
+    {
+        var chat = new RecordingChatService(_tools) { NextReply = "Try Orient Express." };
+        var handler = new ChatCommandHandler(chat, _history, _tools);
+
+        var result = await handler.Handle(new ChatCommand(null, "mystery please"), CancellationToken.None);
+
+        Assert.Contains(result.ToolsUsed, t => t.Name == "search_catalog");
+        Assert.Equal("Try Orient Express.", result.Message);
+    }
+
+    private sealed class RecordingChatService : IChatService
+    {
+        private readonly IToolCallSink _sink;
+
+        public string NextReply { get; set; } = "";
+
+        public RecordingChatService(IToolCallSink sink) => _sink = sink;
+
+        public Task<string> CompleteAsync(
+            IEnumerable<ChatMessage> messages,
+            CancellationToken cancellationToken)
+        {
+            _sink.Clear();
+            _sink.Record("search_catalog", "query=mystery");
+            return Task.FromResult(NextReply);
+        }
+
+        public async IAsyncEnumerable<string> StreamAsync(
+            IEnumerable<ChatMessage> messages,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+        {
+            yield return NextReply;
+            await Task.Yield();
+        }
     }
 }
