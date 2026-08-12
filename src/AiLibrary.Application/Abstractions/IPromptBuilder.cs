@@ -4,7 +4,6 @@ namespace AiLibrary.Application.Abstractions;
 
 public interface IPromptBuilder
 {
-    IEnumerable<ChatMessage> BuildPrompt(
-            IEnumerable<ChatMessage> history,
-            ChatMessage userMessage);
+    /// <summary>Librarian system message (persona + catalog block) seeded once per session.</summary>
+    ChatMessage GetSystemMessage();
 }

@@ -4,7 +4,11 @@ namespace AiLibrary.Application.Abstractions;
 
 public interface IChatService
 {
-    Task<Dtos.Chat.ChatResponse> SendMessageAsync(
-        IEnumerable<ChatMessage> prompt,
+    Task<string> CompleteAsync(
+        IEnumerable<ChatMessage> messages,
+        CancellationToken cancellationToken);
+
+    IAsyncEnumerable<ChatResponseUpdate> StreamAsync(
+        IEnumerable<ChatMessage> messages,
         CancellationToken cancellationToken);
 }
