@@ -1,6 +1,8 @@
 ﻿using AiLibrary.Application.Abstractions;
-using AiLibrary.Infrastructure.Catalog;
+using AiLibrary.Infrastructure.Data;
+using AiLibrary.Infrastructure.Data.Repositories;
 using AiLibrary.Infrastructure.Services;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -27,7 +29,13 @@ public static class ServiceCollectionExtensions
                 $"Invalid Ollama endpoint URI: '{endpoint}'");
         }
 
-        services.AddSingleton<IBookCatalog, InMemoryBookCatalog>();
+        var connectionString = configuration.GetConnectionString("Default")
+            ?? "Data Source=ailibrary";
+
+        services.AddDbContextFactory<SqlContext>(options =>
+            options.UseSqlite(connectionString));
+
+        services.AddScoped(typeof(ISqlRepository<>), typeof(SqlRepository<>));
         services.AddSingleton<IPromptBuilder, PromptBuilder>();
         services.AddSingleton<IChatHistoryStore, ChatHistoryStore>();
         services.AddScoped<IChatService, ChatService>();
@@ -36,5 +44,12 @@ public static class ServiceCollectionExtensions
             new OllamaChatClient(endpointUri, model));
 
         return services;
+    }
+
+    public static async Task InitializeDatabaseAsync(this IServiceProvider services)
+    {
+        var factory = services.GetRequiredService<IDbContextFactory<SqlContext>>();
+        await using var db = await factory.CreateDbContextAsync();
+        await db.Database.MigrateAsync();
     }
 }

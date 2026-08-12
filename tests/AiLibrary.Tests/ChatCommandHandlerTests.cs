@@ -1,5 +1,4 @@
 using AiLibrary.Application.Commands;
-using AiLibrary.Infrastructure.Catalog;
 using AiLibrary.Infrastructure.Services;
 using AiLibrary.Tests.Fakes;
 using Microsoft.Extensions.AI;
@@ -9,14 +8,11 @@ namespace AiLibrary.Tests;
 public class ChatCommandHandlerTests
 {
     private readonly FakeChatService _chat = new();
-    private readonly ChatHistoryStore _history;
+    private readonly ChatHistoryStore _history = new(new PromptBuilder());
     private readonly ChatCommandHandler _handler;
 
     public ChatCommandHandlerTests()
     {
-        var catalog = new InMemoryBookCatalog();
-        var promptBuilder = new PromptBuilder(catalog);
-        _history = new ChatHistoryStore(promptBuilder);
         _handler = new ChatCommandHandler(_chat, _history);
     }
 
@@ -66,12 +62,12 @@ public class ChatCommandHandlerTests
     }
 
     [Fact]
-    public async Task Handle_SystemPrompt_IncludesCatalogTitle()
+    public async Task Handle_SystemPrompt_IsGenericLibrarianPersona()
     {
         _ = await _handler.Handle(new ChatCommand(null, "Hi"), CancellationToken.None);
 
         var system = _chat.ReceivedPrompts[0].First(m => m.Role == ChatRole.System);
-        Assert.Contains("The Hobbit", system.Text, StringComparison.Ordinal);
-        Assert.Contains("LIBRARY CATALOG", system.Text, StringComparison.Ordinal);
+        Assert.Contains("Ava", system.Text, StringComparison.Ordinal);
+        Assert.Contains("librarian", system.Text, StringComparison.OrdinalIgnoreCase);
     }
 }

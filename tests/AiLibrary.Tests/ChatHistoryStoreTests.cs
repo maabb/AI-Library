@@ -1,4 +1,3 @@
-using AiLibrary.Infrastructure.Catalog;
 using AiLibrary.Infrastructure.Services;
 using Microsoft.Extensions.AI;
 
@@ -6,8 +5,7 @@ namespace AiLibrary.Tests;
 
 public class ChatHistoryStoreTests
 {
-    private readonly ChatHistoryStore _store =
-        new(new PromptBuilder(new InMemoryBookCatalog()));
+    private readonly ChatHistoryStore _store = new(new PromptBuilder());
 
     [Fact]
     public void AddUserMessage_SeedsSystemPromptOnce()

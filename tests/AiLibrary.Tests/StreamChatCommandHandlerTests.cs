@@ -1,6 +1,5 @@
 using System.Text;
 using AiLibrary.Application.Commands;
-using AiLibrary.Infrastructure.Catalog;
 using AiLibrary.Infrastructure.Services;
 using AiLibrary.Tests.Fakes;
 using Microsoft.Extensions.AI;
@@ -13,7 +12,7 @@ public class StreamChatCommandHandlerTests
     public async Task Stream_YieldsTokens_AndPersistsFullAssistantMessage()
     {
         var chat = new FakeChatService { NextReply = "ABC" };
-        var history = new ChatHistoryStore(new PromptBuilder(new InMemoryBookCatalog()));
+        var history = new ChatHistoryStore(new PromptBuilder());
         var handler = new StreamChatCommandHandler(chat, history);
 
         var result = await handler.Handle(

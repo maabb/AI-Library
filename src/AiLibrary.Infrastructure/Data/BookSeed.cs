@@ -1,19 +1,15 @@
-using AiLibrary.Application.Abstractions;
 using AiLibrary.Domain.Entities;
 
-namespace AiLibrary.Infrastructure.Catalog;
+namespace AiLibrary.Infrastructure.Data;
 
-/// <summary>
-/// Seeded mini-catalog so the librarian can ground recommendations in real inventory.
-/// Replace with EF Core / SQLite when you move past the learning stage.
-/// </summary>
-public sealed class InMemoryBookCatalog : IBookCatalog
+internal static class BookSeed
 {
-    private readonly IReadOnlyList<Book> _books =
+    // Stable ids so HasData migrations stay deterministic.
+    internal static readonly Book[] All =
     [
         new()
         {
-            Id = "hobbit",
+            Id = Guid.Parse("11111111-1111-1111-1111-111111111101"),
             Title = "The Hobbit",
             Author = "J.R.R. Tolkien",
             Genre = "Fantasy",
@@ -24,7 +20,7 @@ public sealed class InMemoryBookCatalog : IBookCatalog
         },
         new()
         {
-            Id = "earthsea",
+            Id = Guid.Parse("11111111-1111-1111-1111-111111111102"),
             Title = "A Wizard of Earthsea",
             Author = "Ursula K. Le Guin",
             Genre = "Fantasy",
@@ -35,7 +31,7 @@ public sealed class InMemoryBookCatalog : IBookCatalog
         },
         new()
         {
-            Id = "pride",
+            Id = Guid.Parse("11111111-1111-1111-1111-111111111103"),
             Title = "Pride and Prejudice",
             Author = "Jane Austen",
             Genre = "Romance / Classic",
@@ -46,7 +42,7 @@ public sealed class InMemoryBookCatalog : IBookCatalog
         },
         new()
         {
-            Id = "orient",
+            Id = Guid.Parse("11111111-1111-1111-1111-111111111104"),
             Title = "Murder on the Orient Express",
             Author = "Agatha Christie",
             Genre = "Mystery",
@@ -57,7 +53,7 @@ public sealed class InMemoryBookCatalog : IBookCatalog
         },
         new()
         {
-            Id = "dune",
+            Id = Guid.Parse("11111111-1111-1111-1111-111111111105"),
             Title = "Dune",
             Author = "Frank Herbert",
             Genre = "Science Fiction",
@@ -68,7 +64,7 @@ public sealed class InMemoryBookCatalog : IBookCatalog
         },
         new()
         {
-            Id = "gatsby",
+            Id = Guid.Parse("11111111-1111-1111-1111-111111111106"),
             Title = "The Great Gatsby",
             Author = "F. Scott Fitzgerald",
             Genre = "Literary Fiction",
@@ -79,7 +75,7 @@ public sealed class InMemoryBookCatalog : IBookCatalog
         },
         new()
         {
-            Id = "kindred",
+            Id = Guid.Parse("11111111-1111-1111-1111-111111111107"),
             Title = "Kindred",
             Author = "Octavia E. Butler",
             Genre = "Science Fiction / Historical",
@@ -90,7 +86,7 @@ public sealed class InMemoryBookCatalog : IBookCatalog
         },
         new()
         {
-            Id = "circe",
+            Id = Guid.Parse("11111111-1111-1111-1111-111111111108"),
             Title = "Circe",
             Author = "Madeline Miller",
             Genre = "Mythic Fiction",
@@ -101,7 +97,7 @@ public sealed class InMemoryBookCatalog : IBookCatalog
         },
         new()
         {
-            Id = "project-hail-mary",
+            Id = Guid.Parse("11111111-1111-1111-1111-111111111109"),
             Title = "Project Hail Mary",
             Author = "Andy Weir",
             Genre = "Science Fiction",
@@ -112,7 +108,7 @@ public sealed class InMemoryBookCatalog : IBookCatalog
         },
         new()
         {
-            Id = "anne",
+            Id = Guid.Parse("11111111-1111-1111-1111-111111111110"),
             Title = "Anne of Green Gables",
             Author = "L.M. Montgomery",
             Genre = "Classic / Coming of Age",
@@ -123,7 +119,7 @@ public sealed class InMemoryBookCatalog : IBookCatalog
         },
         new()
         {
-            Id = "night-circus",
+            Id = Guid.Parse("11111111-1111-1111-1111-111111111111"),
             Title = "The Night Circus",
             Author = "Erin Morgenstern",
             Genre = "Fantasy",
@@ -134,7 +130,7 @@ public sealed class InMemoryBookCatalog : IBookCatalog
         },
         new()
         {
-            Id = "and-then-there-were-none",
+            Id = Guid.Parse("11111111-1111-1111-1111-111111111112"),
             Title = "And Then There Were None",
             Author = "Agatha Christie",
             Genre = "Mystery",
@@ -144,32 +140,4 @@ public sealed class InMemoryBookCatalog : IBookCatalog
             Tags = ["thriller", "classic", "isolated"]
         }
     ];
-
-    public IReadOnlyList<Book> GetAll() => _books;
-
-    public Book? GetById(string id) =>
-        _books.FirstOrDefault(b => string.Equals(b.Id, id, StringComparison.OrdinalIgnoreCase));
-
-    public IReadOnlyList<Book> Search(string? query, string? genre = null)
-    {
-        IEnumerable<Book> results = _books;
-
-        if (!string.IsNullOrWhiteSpace(genre))
-        {
-            results = results.Where(b =>
-                b.Genre.Contains(genre, StringComparison.OrdinalIgnoreCase));
-        }
-
-        if (!string.IsNullOrWhiteSpace(query))
-        {
-            results = results.Where(b =>
-                b.Title.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                b.Author.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                b.Blurb.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                b.Tags.Any(t => t.Contains(query, StringComparison.OrdinalIgnoreCase)) ||
-                b.Genre.Contains(query, StringComparison.OrdinalIgnoreCase));
-        }
-
-        return results.ToList();
-    }
 }

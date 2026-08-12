@@ -4,6 +4,6 @@ namespace AiLibrary.Application.Abstractions;
 
 public interface IPromptBuilder
 {
-    /// <summary>Librarian system message (persona + catalog block) seeded once per session.</summary>
+    /// <summary>Generic system persona message seeded once per session.</summary>
     ChatMessage GetSystemMessage();
 }

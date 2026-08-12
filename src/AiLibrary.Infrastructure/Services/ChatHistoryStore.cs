@@ -46,7 +46,7 @@ public class ChatHistoryStore : IChatHistoryStore
         }
     }
 
-    public IReadOnlyList<ChatMessage> GatGetHistory(string sessionId)
+    public IReadOnlyList<ChatMessage> GetHistory(string sessionId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
 

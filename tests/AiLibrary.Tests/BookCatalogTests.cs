@@ -1,35 +1,64 @@
-using AiLibrary.Infrastructure.Catalog;
+using AiLibrary.Application.Abstractions;
+using AiLibrary.Application.Queries.Books;
+using AiLibrary.Domain.Entities;
+using AiLibrary.Tests.Support;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace AiLibrary.Tests;
 
-public class BookCatalogTests
+public class BookCatalogTests : IDisposable
 {
-    private readonly InMemoryBookCatalog _catalog = new();
+    private readonly TestSqlFixture _fx = new();
+    private readonly IServiceScope _scope;
+    private readonly ISqlRepository<Book> _books;
 
-    [Fact]
-    public void GetAll_ReturnsSeededBooks()
+    public BookCatalogTests()
     {
-        Assert.True(_catalog.GetAll().Count >= 8);
+        _scope = _fx.CreateScope();
+        _books = _scope.ServiceProvider.GetRequiredService<ISqlRepository<Book>>();
     }
 
     [Fact]
-    public void Search_ByGenre_Filters()
+    public async Task GetBooksQuery_ReturnsSeededBooks()
     {
-        var mystery = _catalog.Search(null, "Mystery");
+        var handler = new GetBooksQueryHandler(_books);
+        var result = await handler.Handle(new GetBooksQuery(null, null), CancellationToken.None);
+        Assert.True(result.Count >= 8);
+    }
+
+    [Fact]
+    public async Task GetBooksQuery_ByGenre_Filters()
+    {
+        var handler = new GetBooksQueryHandler(_books);
+        var mystery = await handler.Handle(new GetBooksQuery(null, "Mystery"), CancellationToken.None);
+
         Assert.NotEmpty(mystery);
         Assert.All(mystery, b => Assert.Contains("Mystery", b.Genre, StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
-    public void Search_ByQuery_FindsTitleOrTag()
+    public async Task GetBooksQuery_ByQuery_FindsTitle()
     {
-        var hobbit = _catalog.Search("hobbit");
+        var handler = new GetBooksQueryHandler(_books);
+        var hobbit = await handler.Handle(new GetBooksQuery("hobbit", null), CancellationToken.None);
+
         Assert.Contains(hobbit, b => b.Title.Contains("Hobbit", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
-    public void GetById_Unknown_ReturnsNull()
+    public async Task GetBookByIdQuery_Unknown_ReturnsNull()
     {
-        Assert.Null(_catalog.GetById("does-not-exist"));
+        var handler = new GetBookByIdQueryHandler(_books);
+        var book = await handler.Handle(
+            new GetBookByIdQuery(Guid.Parse("99999999-9999-9999-9999-999999999999")),
+            CancellationToken.None);
+
+        Assert.Null(book);
+    }
+
+    public void Dispose()
+    {
+        _scope.Dispose();
+        _fx.Dispose();
     }
 }
